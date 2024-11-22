@@ -45,16 +45,29 @@ class SMBConnector:
                 timeout=30
             )
             
-            self.smb_conn.login(
-                username,
-                password,
-                self._domain
-            )
+            # Check if password is actually a hash
+            if ':' in password:
+                # Assuming password is in the format lm:nt
+                lm_hash, nt_hash = password.split(':')
+                self.smb_conn.login(
+                    username,
+                    '',
+                    self._domain,
+                    lmhash=lm_hash,
+                    nthash=nt_hash
+                )
+            else:
+                self.smb_conn.login(
+                    username,
+                    password,
+                    self._domain
+                )
             
             self.sysvol_path = f"\\\\{self.ldap_conn.server.host}\\SYSVOL\\{self._domain}\\Policies"
             return self.smb_conn
             
         except Exception as e:
+            print(f"[!] SMB connection error: {str(e)}")
             return None
     
     def get_file_content(self, share_path):
