@@ -45,7 +45,6 @@ class SMBConnector:
                 timeout=30
             )
             
-            # Check if password is actually a hash
             if ':' in password:
                 # Assuming password is in the format lm:nt
                 lm_hash, nt_hash = password.split(':')

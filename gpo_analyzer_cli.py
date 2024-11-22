@@ -5,7 +5,6 @@ import sys
 from src.authenticator import ADAuthenticator
 from src.gpo_finder import GPOFinder
 from src.gpo_analyzer import GPOAnalyzer
-from src.output_formatter import OutputFormatter
 from src.gpo_security_checker import GPOSecurityChecker
 
 def parse_args():
@@ -18,12 +17,10 @@ def parse_args():
     auth_group.add_argument('-d', '--domain', required=True, help='Domain')
     auth_group.add_argument('-dc', '--dc-host', required=True, help='Domain controller host')
     auth_group.add_argument('-H', '--hash', help='NTLM hash for Pass-the-Hash')
+    auth_group.add_argument('--dc-ip', help='IP address of the domain controller to avoid DNS resolution issues')
     
     # Output parameters
     output_group = parser.add_argument_group('Output')
-    output_group.add_argument('-o', '--output', help='Path to the output file')
-    output_group.add_argument('-f', '--format', choices=['json', 'csv', 'html'], 
-                            default='json', help='Output format')
     output_group.add_argument('-v', '--verbose', action='store_true',
                             help='Verbose output')
     
@@ -50,17 +47,12 @@ def main():
     args = parse_args()
     
     try:
-        # Check for credentials
-        if not args.hash and not (args.username and args.password):
-            print("[!] Error: No credentials provided")
-            sys.exit(1)
-            
         # Initialize authenticator
         auth = ADAuthenticator(
             username=args.username,
             password=args.password,
             domain=args.domain,
-            dc_host=args.dc_host,
+            dc_host=args.dc_ip or args.dc_host,  # Use IP if provided, otherwise use host
             ntlm_hash=args.hash
         )
         
@@ -115,11 +107,6 @@ def main():
             security_checker.check_all(gpos)
             security_checker.print_findings(args.verbose)
             
-            # Save results
-            if args.output:
-                # TODO: Add saving security check results
-                pass
-                
         except Exception as e:
             print(f"[!] Error analyzing GPO: {str(e)}")
             
