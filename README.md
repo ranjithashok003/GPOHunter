@@ -70,7 +70,7 @@ Example
 -------
 To analyze GPOs and generate an HTML report:
 
-```python gpo_analyzer_cli.py -u USERNAME -p PASSWORD -d DOMAIN -dc DC_HOST -o output.html -f html```
+```python gpo_analyzer_cli.py -u USERNAME -p PASSWORD -d DOMAIN -dc DC_HOST```
 
 
 License
