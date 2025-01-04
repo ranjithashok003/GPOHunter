@@ -248,56 +248,45 @@ class GPOSecurityChecker:
             details = self.gpo_analyzer.analyze_gpo(gpo['guid'], detail_level='full', show_xml=True)
             xml_content = details.get('xml_content', {})
             
-            gpp_files = [
-                '\\Groups\\Groups.xml',          # Local groups
-                '\\Services\\Services.xml',      # Services
-                '\\ScheduledTasks\\*.xml',       # Scheduled Tasks
-                '\\DataSources\\DataSources.xml',# Data Sources
-                '\\Printers\\Printers.xml',      # Printers
-                '\\Drives\\Drives.xml'           # Drive Maps
-            ]
-            
-            encrypted_passwords = []
-            
+            encodings = ['utf-8', 'utf-16']
             for file_path, content in xml_content.items():
-                for gpp_file in gpp_files:
-                    if gpp_file.replace('*', '') in file_path:
-                        cpasswords = re.findall(r'cpassword="([^"]+)"', content)
-                        for cpassword in cpasswords:
+                if '\\Groups\\Groups.xml' in file_path:
+                    for encoding in encodings:
+                        cpassword = re.search(rb'cpassword=["\']?([^"\'\s]+)["\']?', content.encode(encoding))
+                        username = re.search(rb'fullName="([^"]+)"', content.encode(encoding))
+                        if cpassword:
                             try:
-                                decrypted = self._decrypt_cpassword(cpassword)
-                                encrypted_passwords.append({
-                                    'file': file_path,
-                                    'encrypted': cpassword,
-                                    'decrypted': decrypted
-                                })
+                                decrypted = self._decrypt_cpassword(cpassword.group(1).decode())
+                                finding = SecurityCheck(
+                                    name="GPP Encrypted Passwords (MS14-025)",
+                                    description=(
+                                        "Encrypted passwords found in Group Policy Preferences. "
+                                        "These passwords are encrypted with a known key and can be easily decrypted. "
+                                        "This is a critical security vulnerability (MS14-025)."
+                                    ),
+                                    level=SecurityLevel.HIGH,
+                                    affected_gpo=[{
+                                        'name': gpo['name'],
+                                        'guid': gpo['guid'],
+                                        'linked_ous': self.gpo_analyzer.gpo_finder.get_gpo_links(gpo['guid'])
+                                    }],
+                                    details={
+                                        'file': file_path,
+                                        'user': username.group(1).decode() if username else 'Unknown',
+                                        'encrypted': cpassword.group(1).decode(),
+                                        'decrypted': decrypted,
+                                        'recommendation': (
+                                            "\n1. Immediately remove passwords from GPP\n"
+                                            "2. Change all discovered passwords\n"
+                                            "3. Use group policies without storing passwords"
+                                        )
+                                    }
+                                )
+                                self.findings.append(finding)
+                                break
                             except Exception:
+                                print(f"Error decrypting password in {file_path}")
                                 continue
-            
-            if encrypted_passwords:
-                finding = SecurityCheck(
-                    name="GPP Encrypted Passwords (MS14-025)",
-                    description=(
-                        "Encrypted passwords found in Group Policy Preferences. "
-                        "These passwords are encrypted with a known key and can be easily decrypted. "
-                        "This is a critical security vulnerability (MS14-025)."
-                    ),
-                    level=SecurityLevel.HIGH,
-                    affected_gpo=[{
-                        'name': gpo['name'],
-                        'guid': gpo['guid'],
-                        'linked_ous': self.gpo_analyzer.gpo_finder.get_gpo_links(gpo['guid'])
-                    }],
-                    details={
-                        'passwords': encrypted_passwords,
-                        'recommendation': (
-                            "1. Immediately remove passwords from GPP\n"
-                            "2. Change all discovered passwords\n"
-                            "3. Use group policies without storing passwords"
-                        )
-                    }
-                )
-                self.findings.append(finding)
                         
         except Exception as e:
             print(f"[!] Error checking GPP passwords for GPO {gpo['name']}: {str(e)}")
