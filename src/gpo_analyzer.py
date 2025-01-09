@@ -11,28 +11,29 @@ from io import BytesIO
 
 class GPOAnalyzer:
     def __init__(self, ldap_conn, gpo_finder):
+        # Initialize GPOAnalyzer with LDAP connection and GPO finder
         self.ldap_conn = ldap_conn
         self.gpo_finder = gpo_finder
         self.conn = ldap_conn
         self.smb = SMBConnector(ldap_conn)
         
     def analyze_gpo(self, gpo_guid, detail_level='basic', show_xml=False):
-        """Анализ конкретной GPO"""
+        """Analyze specific GPO"""
         try:
-            # Получаем базовую информацию о GPO
+            # Get basic information about GPO
             gpo_info = self.gpo_finder.get_gpo_info(gpo_guid)
             if not gpo_info:
                 return None
 
-            # Проверяем флаги состояния GPO
+            # Check GPO status flags
             flags = int(gpo_info.get('flags', 0))
-            # GPO отключен только если явно установлен флаг отключения (обычно это 1)
-            # По умолчанию считаем GPO включенным
+            # GPO is disabled only if the disable flag is explicitly set (usually 1)
+            # By default, consider GPO enabled
             is_enabled = flags != 1
 
             basic_info = {
                 'name': gpo_info.get('displayName', 'Unknown'),
-                'enabled': is_enabled,  # Изменена логика определения статуса
+                'enabled': is_enabled,  # Changed logic for determining status
                 'created': gpo_info.get('whenCreated', 'Unknown'),
                 'modified': gpo_info.get('whenChanged', 'Unknown'),
                 'path': gpo_info.get('gPCFileSysPath', '')
@@ -53,17 +54,17 @@ class GPOAnalyzer:
                     'registry_settings': self._get_registry_settings(gpo_guid)
                 })
                 
-            # Добавляем содержимое XML файлов если запрошено
+            # Add XML file content if requested
             if show_xml:
                 gpo_details['xml_content'] = self._get_gpo_xml_content(gpo_guid)
                 
             return gpo_details
             
         except Exception as e:
-            raise Exception(f"Ошибка при анализе GPO {gpo_guid}: {str(e)}")
+            raise Exception(f"Error analyzing GPO {gpo_guid}: {str(e)}")
     
     def _get_basic_info(self, gpo_guid):
-        """Получение базовой информации о GPO"""
+        """Get basic information about GPO"""
         gpo_dn = f"CN={{{gpo_guid}}},CN=Policies,CN=System,{self.gpo_finder.base_dn}"
         attributes = [
             'displayName', 'description', 'flags', 'whenCreated', 
@@ -79,7 +80,7 @@ class GPOAnalyzer:
             )
             
             if not self.conn.entries:
-                raise Exception(f"GPO с GUID {gpo_guid} не найдена")
+                raise Exception(f"GPO with GUID {gpo_guid} not found")
                 
             entry = self.conn.entries[0]
             return {
@@ -92,10 +93,10 @@ class GPOAnalyzer:
             }
             
         except Exception as e:
-            raise Exception(f"Ошибка при получении базовой информации: {str(e)}")
+            raise Exception(f"Error getting basic information: {str(e)}")
     
     def _get_scope_info(self, gpo_guid):
-        """Получение информации об области применения GPO"""
+        """Get information about GPO scope"""
         try:
             return {
                 'linked_ous': self.gpo_finder.get_gpo_links(gpo_guid),
@@ -103,10 +104,10 @@ class GPOAnalyzer:
                 'wmi_filters': self._get_wmi_filters(gpo_guid)
             }
         except Exception as e:
-            raise Exception(f"Ошибка при получении области применения: {str(e)}")
+            raise Exception(f"Error getting scope information: {str(e)}")
     
     def _get_security_groups(self, gpo_guid):
-        """Получение групп безопасности, применяемых к GPO"""
+        """Get security groups applied to GPO"""
         gpo_dn = f"CN={{{gpo_guid}}},CN=Policies,CN=System,{self.gpo_finder.base_dn}"
         try:
             self.ldap_conn.search(
@@ -117,17 +118,17 @@ class GPOAnalyzer:
             
             security_groups = []
             if self.ldap_conn.entries:
-                # Парсинг ACL и извлечение групп
-                # TODO: Реализовать парсинг ACL
+                # Parse ACL and extract groups
+                # TODO: Implement ACL parsing
                 pass
                 
             return security_groups
             
         except Exception as e:
-            raise Exception(f"Ошибка при получении групп безопасности: {str(e)}")
+            raise Exception(f"Error getting security groups: {str(e)}")
     
     def _get_wmi_filters(self, gpo_guid):
-        """Получение WMI фильтров, привязанных к GPO"""
+        """Get WMI filters linked to GPO"""
         try:
             wmi_filter_container = f"CN=SOM,CN=WMIPolicy,CN=System,{self.gpo_finder.base_dn}"
             self.conn.search(
@@ -147,10 +148,10 @@ class GPOAnalyzer:
             return wmi_filters
             
         except Exception as e:
-            raise Exception(f"Ошибка при получении WMI фильтров: {str(e)}")
+            raise Exception(f"Error getting WMI filters: {str(e)}")
     
     def _get_security_settings(self, gpo_guid):
-        """Получение настроек безопасности из GptTmpl.inf"""
+        """Get security settings from GptTmpl.inf"""
         try:
             share_path = f"{self.smb.get_sysvol_path()}\\{{{gpo_guid}}}\\Machine\\Microsoft\\Windows NT\\SecEdit\\GptTmpl.inf"
             share_path = share_path.replace(f"\\\\{self.ldap_conn.server.host}\\SYSVOL\\", '')
@@ -162,7 +163,7 @@ class GPOAnalyzer:
             if not content:
                 return {}
                 
-            # Пробуем разные кодировки для декодирования содержимого
+            # Try different encodings to decode content
             decoded_content = None
             for encoding in ['utf-16', 'utf-8', 'latin1', 'utf-16le']:
                 try:
@@ -174,7 +175,7 @@ class GPOAnalyzer:
             if not decoded_content:
                 return {}
                 
-            # Создаем временный файл для configparser
+            # Create a temporary file for configparser
             temp_file = 'temp_gpt.inf'
             try:
                 with open(temp_file, 'w', encoding='utf-8') as f:
@@ -212,11 +213,11 @@ class GPOAnalyzer:
                     os.remove(temp_file)
                 
         except Exception as e:
-            raise Exception(f"Ошибка при чтении настроек безопасности: {str(e)}")
+            raise Exception(f"Error reading security settings: {str(e)}")
     
     def _parse_system_access(self, settings):
-        """Парсинг секции System Access"""
-        # Преобразование числовых значений в понятные настройки
+        """Parse System Access section"""
+        # Convert numeric values to understandable settings
         boolean_settings = [
             'ClearTextPassword',
             'RequireLogonToChangePassword',
@@ -227,7 +228,7 @@ class GPOAnalyzer:
             if setting in settings:
                 settings[setting] = settings[setting] == '1'
         
-        # Преобразование временных значений
+        # Convert time values
         time_settings = [
             'MaximumPasswordAge',
             'MinimumPasswordAge',
@@ -247,7 +248,7 @@ class GPOAnalyzer:
                     pass
     
     def _parse_event_audit(self, settings):
-        """Парсинг секции Event Audit"""
+        """Parse Event Audit section"""
         audit_values = {
             '0': 'No Auditing',
             '1': 'Success',
@@ -260,15 +261,15 @@ class GPOAnalyzer:
                 settings[setting] = audit_values[value]
     
     def _parse_privilege_rights(self, settings):
-        """Парсинг секции Privilege Rights"""
+        """Parse Privilege Rights section"""
         for privilege, sids in settings.items():
-            # Преобразуем SID'ы в имена учетных записей
+            # Convert SIDs to account names
             sid_list = sids.split(',')
             account_names = []
             
             for sid in sid_list:
                 try:
-                    # Получаем имя учетной записи по SID
+                    # Get account name by SID
                     self.conn.search(
                         search_base=self.gpo_finder.base_dn,
                         search_filter=f'(objectSid={sid.strip()})',
@@ -288,30 +289,30 @@ class GPOAnalyzer:
             settings[privilege] = account_names
     
     def _get_mapped_drives(self, gpo_guid):
-        """Получение настроек подключенных дисков"""
-        # TODO: Реализовать чтение Drive Maps
+        """Get mapped drive settings"""
+        # TODO: Implement reading Drive Maps
         return []
     
     def _get_scheduled_tasks(self, gpo_guid):
-        """Получение настроек запланированных задач"""
+        """Get scheduled task settings"""
         try:
             tasks = {
                 'immediate': [],
                 'scheduled': []
             }
             
-            # Пути к файлам задач
+            # Paths to task files
             paths = [
                 f"\\{{{gpo_guid}}}\\Machine\\Preferences\\ScheduledTasks\\ScheduledTasks.xml",
                 f"\\{{{gpo_guid}}}\\User\\Preferences\\ScheduledTasks\\ScheduledTasks.xml"
             ]
             
             for path in paths:
-                share_path = path.replace('\\', '/', 1)  # Преобразуем путь для SMB
+                share_path = path.replace('\\', '/', 1)  # Convert path for SMB
                 if self.smb.check_file_exists(share_path):
                     content = self.smb.get_file_content(share_path)
                     if content:
-                        # Парсим XML и добавляем задачи
+                        # Parse XML and add tasks
                         try:
                             root = ET.fromstring(content.decode('utf-16'))
                             for task in root.findall(".//TaskV2"):
@@ -325,15 +326,15 @@ class GPOAnalyzer:
                                 }
                                 tasks['scheduled'].append(task_info)
                         except ET.ParseError:
-                            print(f"[-] Ошибка при парсинге XML файла задач: {path}")
+                            print(f"[-] Error parsing XML task file: {path}")
             
             return tasks
             
         except Exception as e:
-            raise Exception(f"Ошибка при чтении запланированных задач: {str(e)}")
+            raise Exception(f"Error reading scheduled tasks: {str(e)}")
     
     def _get_immediate_tasks(self, gpo_guid):
-        """Получение немедленных задач"""
+        """Get immediate tasks"""
         immediate_tasks = []
         tasks_path = f"{self.sysvol_path}\\{{{gpo_guid}}}\\Machine\\Preferences\\Tasks\\Immediate"
         
@@ -359,10 +360,10 @@ class GPOAnalyzer:
             return immediate_tasks
             
         except Exception as e:
-            raise Exception(f"Ошибка при чтении немедленных задач: {str(e)}")
+            raise Exception(f"Error reading immediate tasks: {str(e)}")
     
     def _get_scheduled_task_files(self, gpo_guid):
-        """Получение запланированных задач"""
+        """Get scheduled tasks"""
         scheduled_tasks = []
         tasks_path = f"{self.sysvol_path}\\{{{gpo_guid}}}\\Machine\\Preferences\\ScheduledTasks"
         
@@ -391,10 +392,10 @@ class GPOAnalyzer:
             return scheduled_tasks
             
         except Exception as e:
-            raise Exception(f"Ошибка при чтении запланированных задач: {str(e)}")
+            raise Exception(f"Error reading scheduled tasks: {str(e)}")
     
     def _parse_task_action(self, task):
-        """Парсинг действий задачи"""
+        """Parse task actions"""
         actions = []
         for action in task.findall(".//Exec"):
             action_info = {
@@ -404,7 +405,7 @@ class GPOAnalyzer:
                 'working_dir': action.get('workingDirectory', '')
             }
             
-            # Декодирование закодированных команд
+            # Decode encoded commands
             if action_info['command'].startswith('##'):
                 try:
                     decoded = b64decode(action_info['command'][2:]).decode('utf-16le')
@@ -416,7 +417,7 @@ class GPOAnalyzer:
         return actions
     
     def _parse_task_principal(self, task):
-        """Парсинг информации о пользоателе задачи"""
+        """Parse task user information"""
         principal = task.find(".//Principal")
         if principal is not None:
             return {
@@ -427,7 +428,7 @@ class GPOAnalyzer:
         return {}
     
     def _parse_task_triggers(self, task):
-        """Парсинг триггеров задачи"""
+        """Parse task triggers"""
         triggers = []
         for trigger in task.findall(".//Trigger"):
             trigger_info = {
@@ -437,7 +438,7 @@ class GPOAnalyzer:
                 'enabled': trigger.get('enabled', 'true') == 'true'
             }
             
-            # Дополнительные параметры в зависимости от типа триггера
+            # Additional parameters depending on trigger type
             if trigger.get('type') == 'TASK_TRIGGER_DAILY':
                 trigger_info['interval_days'] = trigger.get('intervalDays', '1')
             elif trigger.get('type') == 'TASK_TRIGGER_WEEKLY':
@@ -448,7 +449,7 @@ class GPOAnalyzer:
         return triggers
     
     def _parse_task_settings(self, task):
-        """Парсинг настроек задачи"""
+        """Parse task settings"""
         settings = task.find(".//Settings")
         if settings is not None:
             return {
@@ -461,8 +462,8 @@ class GPOAnalyzer:
         return {}
     
     def _get_scripts(self, gpo_guid):
-        """Получение настроек скриптов"""
-        # TODO: Реализовать чтение Scripts
+        """Get script settings"""
+        # TODO: Implement reading Scripts
         return {
             'startup': [],
             'shutdown': [],
@@ -471,39 +472,39 @@ class GPOAnalyzer:
         }
     
     def _get_software_settings(self, gpo_guid):
-        """Получение настроек установки ПО"""
-        # TODO: Реализовать чтение Software Installation
+        """Get software installation settings"""
+        # TODO: Implement reading Software Installation
         return []
     
     def _get_registry_settings(self, gpo_guid):
-        """Получение настроек реестра"""
-        # TODO: Реализовать чтение Registry Settings
+        """Get registry settings"""
+        # TODO: Implement reading Registry Settings
         return [] 
     
     def _connect_to_sysvol(self):
-        """Подключение к SYSVOL через SMB"""
+        """Connect to SYSVOL via SMB"""
         if not self.sysvol_path:
             try:
-                # Получаем полное имя домена из DN
+                # Get full domain name from DN
                 domain_parts = []
                 dn_parts = self.gpo_finder.base_dn.split(',')
                 for part in dn_parts:
                     if part.startswith('DC='):
                         domain_parts.append(part.split('=')[1])
                 
-                domain = '.'.join(domain_parts)  # Теперь будет roasting.lab вместо lab
+                domain = '.'.join(domain_parts)  # Now it will be roasting.lab instead of lab
                 
-                print(f"[*] Подключение к SYSVOL на {self.ldap_conn.server.host}")
-                print(f"[*] Домен: {domain}")
+                print(f"[*] Connecting to SYSVOL on {self.ldap_conn.server.host}")
+                print(f"[*] Domain: {domain}")
                 
-                # Получаем учетные данные из LDAP-соединения
+                # Get credentials from LDAP connection
                 if hasattr(self.ldap_conn, 'user'):
                     username = self.ldap_conn.user
                     if '\\' in username:
                         username = username.split('\\')[1]
                     password = self.ldap_conn.password
                 else:
-                    # Если не можем получить учетные данные напрямую
+                    # If unable to get credentials directly
                     connection_string = str(self.ldap_conn)
                     if 'user=' in connection_string:
                         username = connection_string.split('user=')[1].split(',')[0]
@@ -511,9 +512,9 @@ class GPOAnalyzer:
                             username = username.split('\\')[1]
                         password = connection_string.split('password=')[1].split(',')[0]
                     else:
-                        raise Exception("Не удалось получить учетные данные из LDAP-соединения")
+                        raise Exception("Failed to get credentials from LDAP connection")
 
-                print(f"[*] Попытка входа как: {username}")
+                print(f"[*] Attempting login as: {username}")
                 
                 smb = SMBConnection(
                     self.ldap_conn.server.host,
@@ -528,15 +529,15 @@ class GPOAnalyzer:
                 )
                 
                 self.sysvol_path = f"\\\\{self.ldap_conn.server.host}\\SYSVOL\\{domain}\\Policies"
-                print(f"[*] SYSVOL путь: {self.sysvol_path}")
+                print(f"[*] SYSVOL path: {self.sysvol_path}")
                 return smb
                 
             except Exception as e:
-                print(f"[!] Ошибка подключения к SYSVOL: {str(e)}")
+                print(f"[!] Error connecting to SYSVOL: {str(e)}")
                 return None
     
     def _get_gpo_xml_content(self, gpo_guid):
-        """Получение содержимого XML файлов GPO"""
+        """Get GPO XML file content"""
         try:
             xml_content = {}
             

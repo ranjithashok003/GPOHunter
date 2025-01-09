@@ -5,6 +5,7 @@ from ldap3.core.exceptions import LDAPException
 class ADAuthenticator:
     def __init__(self, username=None, password=None, domain=None, 
                  dc_host=None, ntlm_hash=None):
+        # Initialize ADAuthenticator with credentials and domain information
         self.username = username
         self.password = password
         self.domain = domain
