@@ -44,9 +44,12 @@ To run GPOHunter, use the following command:
 
 
 Options:
+- `-u`, `--username`: Username for authentication.
+- `-p`, `--password`: Password for authentication.
+- `-d`, `--domain`: Domain (required).
+- `-dc`, `--dc-host`: Domain controller host (required).
 - `-H`, `--hash`: NTLM hash for Pass-the-Hash.
-- `-o`, `--output`: Path to the output file.
-- `-f`, `--format`: Output format (json, csv, html).
+- `--dc-ip`: IP address of the domain controller to avoid DNS resolution issues.
 - `-v`, `--verbose`: Verbose output.
 - `--show-xml`: Show raw XML content of GPO files.
 

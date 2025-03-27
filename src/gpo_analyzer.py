@@ -181,7 +181,7 @@ class GPOAnalyzer:
                 with open(temp_file, 'w', encoding='utf-8') as f:
                     f.write(decoded_content)
                 
-                config = configparser.ConfigParser()
+                config = configparser.ConfigParser(strict=False)
                 config.read(temp_file, encoding='utf-8')
                 
                 security_settings = {}
