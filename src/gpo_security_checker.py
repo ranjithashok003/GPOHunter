@@ -4,8 +4,10 @@ import ldap3
 from base64 import b64decode
 import re
 from Crypto.Cipher import AES
+import json
 
-init()  # Инициализация colorama для Windows
+
+init()  
 
 class SecurityLevel(Enum):
     HIGH = (Fore.RED + "HIGH" + Style.RESET_ALL)
@@ -14,16 +16,28 @@ class SecurityLevel(Enum):
     INFO = (Fore.GREEN + "INFO" + Style.RESET_ALL)
 
 class SecurityCheck:
-    def __init__(self, name, description, level, affected_gpo=None, details=None):
+    def __init__(self, name, description, level, gpo_count, affected_gpo=None, details=None):
         self.name = name
         self.description = description
         self.level = level
+        self.gpo_count = gpo_count
         self.affected_gpo = affected_gpo or []
         self.details = details or {}
-        self.affected_objects = {}  # Словарь для хранения затронутых объектов по каждому GPO
+        self.affected_objects = {}  
+    def to_dict(self):
+        return {
+            "name": self.name,
+            "description": self.description,
+            "total_gpo_count": self.gpo_count,
+            "level": self.level.name,  # Store enum name instead of colorized text
+            "details": self.details,
+            "affected_objects": self.affected_objects,
+        }
 
+    def to_json(self, indent=2):
+        return json.dumps(self.to_dict(), indent=indent)
+        
     def analyze_scope(self, ldap_conn, base_dn):
-        """Анализ области применения GPO"""
         for gpo in self.affected_gpo:
             ou_links = gpo.get('linked_ous', [])
             self.affected_objects[gpo['guid']] = {
@@ -160,6 +174,14 @@ class GPOSecurityChecker:
         # Key for decrypting GPP passwords (publicly known)
         self.gpp_key = b'\x4e\x99\x06\xe8\xfc\xb6\x6c\xc9\xfa\xf4\x93\x10\x62\x0f\xfe\xe8\xf4\x96\xe8\x06\xcc\x05\x79\x90\x20\x9b\x09\xa4\x33\xb6\x6c\x1b'
 
+    def export_findings_to_json(self, filepath="findings.json", indent=2):
+        """Export all findings to a JSON file"""
+        findings_data = [finding.to_dict() for finding in self.findings]
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(findings_data, f, indent=indent)
+        print(f"[+] Findings exported to {filepath}")
+
+
     def check_all(self, gpos):
         """Perform all security checks"""
         for gpo in gpos:
@@ -189,6 +211,7 @@ class GPOSecurityChecker:
                                 "and also allows password cracking using rainbow tables."
                             ),
                             level=SecurityLevel.HIGH,
+                            gpo_count=len(self.gpo_analyzer.gpo_finder.find_all_gpos()),
                             affected_gpo=[{
                                 'name': gpo['name'],
                                 'guid': gpo['guid'],
@@ -196,8 +219,9 @@ class GPOSecurityChecker:
                             }],
                             details={
                                 'file': file_path,
-                                'setting': re.search(r'LmCompatibilityLevel=4,[01]', content).group(0)
-                            }
+                                'setting': re.search(r'LmCompatibilityLevel=4,[01]', content).group(0),
+                                "recommendation": "Disable NetNTLMv1 and use NetNTLMv2 or Kerberos for stronger authentication security"
+                            }              
                         )
                         self.findings.append(finding)
                 break
@@ -223,6 +247,7 @@ class GPOSecurityChecker:
                                 "security vulnerability."
                             ),
                             level=SecurityLevel.HIGH,
+                            gpo_count=len(self.gpo_analyzer.gpo_finder.find_all_gpos()),
                             affected_gpo=[{
                                 'name': gpo['name'],
                                 'guid': gpo['guid'],
@@ -230,7 +255,8 @@ class GPOSecurityChecker:
                             }],
                             details={
                                 'file': file_path,
-                                'setting': 'ClearTextPassword = 1'
+                                'setting': 'ClearTextPassword = 1',
+                                "recommendation": "Set ClearTextPassword to 0 in the affected GPO"
                             }
                         )
                         self.findings.append(finding)
@@ -265,6 +291,7 @@ class GPOSecurityChecker:
                                         "This is a critical security vulnerability (MS14-025)."
                                     ),
                                     level=SecurityLevel.HIGH,
+                                    gpo_count=len(self.gpo_analyzer.gpo_finder.find_all_gpos()),
                                     affected_gpo=[{
                                         'name': gpo['name'],
                                         'guid': gpo['guid'],
@@ -276,9 +303,9 @@ class GPOSecurityChecker:
                                         'encrypted': cpassword.group(1).decode(),
                                         'decrypted': decrypted,
                                         'recommendation': (
-                                            "\n1. Immediately remove passwords from GPP\n"
-                                            "2. Change all discovered passwords\n"
-                                            "3. Use group policies without storing passwords"
+                                            """1. Immediately remove passwords from GPP 
+                                            2. Change all discovered passwords 
+                                            3. Use group policies without storing passwords"""
                                         )
                                     }
                                 )
